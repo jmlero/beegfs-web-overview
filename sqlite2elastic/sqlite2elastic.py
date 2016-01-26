@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# compressandmove.py Code
+# sqlite2elastic.py Code
 #
 # Copyright (c) Jose M. Molero
 #
@@ -27,30 +27,30 @@
 # DEALINGS IN THE SOFTWARE.
 
 """
-Code sample to compress and move folders
+Code sample 
 Notes:
 -
 TODO list:
+-
 """
-
 
 # stdlib imports
 import argparse
 import os
 import tarfile
 import shutil
-# import errno
-# import string
-
-
-# global variables
-_SCRIPT_VERSION = '1.0'
-
 from datetime import datetime
 from elasticsearch import Elasticsearch
 import sqlite3
 import requests
 import json
+# import errno
+# import string
+
+
+# global variables
+_SCRIPT_VERSION = '0.1'
+
 
 
 res = requests.get('http://elastic.int.cemm.at:9200')
