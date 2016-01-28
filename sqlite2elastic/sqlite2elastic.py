@@ -33,47 +33,36 @@ TODO list:
 -
 """
 
-# stdlib imports
+# imports
 import sqlite3
 import elasticsearch
-import requests
-import argparse
-import os
-import tarfile
-import shutil
 from datetime import datetime
-import json
-import errno
-import string
+import requests
+# import argparse
+# import os
+# import tarfile
+# import shutil
+# import json
+# import errno
+# import string
 
 
 # global variables
-_SCRIPT_VERSION = '0.1'
+_SCRIPT_VERSION = '0.2'
+
+_ELASTIC_SERVER = 'http://elastic.int.cemm.at:9200'
+_ELASTIC_SERVER_PORT = 9200
+_BEEGFS_DB = "/mnt/fhgfsMgmt/admon/fhgfs-admon-data.db"
 
 
-def dict_factory(cursor, row):
-    d = {}
-    for idx, col in enumerate(cursor.description):
-                d[col[0]] = row[idx]
-    return d
-
-
-res = requests.get('http://elastic.int.cemm.at:9200')
-con = sqlite3.connect("/mnt/fhgfsMgmt/admon/fhgfs-admon-data.db")
-es = elasticsearch.Elasticsearch([{'host': 'elastic.int.cemm.at', 'port': 9200}])
-
+res = requests.get(_ELASTIC_SERVER)
+con = sqlite3.connect(_BEEGFS_DB)
+es = elasticsearch.Elasticsearch([{'host': 'elastic.int.cemm.at', 'port': _ELASTIC_SERVER_PORT}])
 
 print(res.content)
 
-# con.row_factory = dict_factory
-
-# cur = con.cursor()
-
 row_meta = con.execute("select is_responding, workRequests, queuedRequests from metaNormal order by time desc limit 0,1")
 row_storage = con.execute("select is_responding, diskRead, diskWrite, diskReadPerSec, diskWritePerSec, diskSpaceTotal, diskSpaceFree from storageNormal order by time desc limit 0,1")
-
-# one_row = str(cur.fetchone())
-# print (one_row.replace("'",'"'))
 
 for row in row_meta:
         print row[0]
@@ -99,7 +88,6 @@ for row in row_storage:
         storage_diskSpaceTotal = row[5]
         storage_diskSpaceFree = row[6]
 
-
 meta_body = {
     "timestamp": datetime.now(),
     'is_responding': meta_is_responding,
@@ -107,24 +95,8 @@ meta_body = {
     'queuedRequests': meta_queuedRequests
 }
 
-# meta_storage = {
-#    "timestamp": datetime.now(),
-#    "is_responding": storage_is_responding,
-#    "diskRead": storage_diskRead,
-#    "diskWrite": storage_diskWrite,
-#    "diskReadPerSec": storage_diskReadPerSec,
-#    "diskWritePerSec": storage_diskWritePerSec,
-#    "diskSpaceTotal": storage_diskSpaceTotal,
-#    "diskSpaceFree": storage_diskSpaceFree
-# }
-
-print str(datetime.now())
-print datetime.now()
-# print datetime.now("yyyy-MM-dd HH:mm:ss.SSS")
-
-res_meta = es.index(index="beegfs-data-ms01", doc_type="metrics-meta",  body=meta_body)
-# print(res_meta['ok'])
-res_storage = es.index(index="beegfs-data-storage01", doc_type="metrics-storage", body={"timestamp": datetime.now(),
+storage_body = {
+    "timestamp": datetime.now(),
     "is_responding": storage_is_responding,
     "diskRead": storage_diskRead,
     "diskWrite": storage_diskWrite,
@@ -132,14 +104,14 @@ res_storage = es.index(index="beegfs-data-storage01", doc_type="metrics-storage"
     "diskWritePerSec": storage_diskWritePerSec,
     "diskSpaceTotal": storage_diskSpaceTotal,
     "diskSpaceFree": storage_diskSpaceFree
-})
-# print(res_storage['ok'])
+}
+
+print datetime.now()
+
+res_meta = es.index(index="beegfs-data-ms01", doc_type="metrics-meta",  body=meta_body)
+
+res_storage = es.index(index="beegfs-data-storage01", doc_type="metrics-storage", body=storage_body)
+
 
 res.close()
-
-
-# while one_row is not None:
-#       print (one_row)
-#       one_row = cur.fetchone()
-
 con.close()
