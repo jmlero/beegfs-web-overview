@@ -33,6 +33,7 @@ Notes:
 - Post the metrics to elastic server
 TODO list:
 - Read options from a config file
+- Add infinite loop
 """
 
 # imports
@@ -44,6 +45,10 @@ import requests
 import ConfigParser
 import logging
 import argparse
+from time import sleep
+import logging
+import logging.handlers
+import time
 # import os
 # import json
 # import errno
@@ -58,6 +63,12 @@ _CFG_FILE = r'/root/sqlite2elastic.cfg'
 # _ELASTIC_SERVER_PORT = "9200"
 _BEEGFS_DB = "/mnt/fhgfsMgmt/admon/fhgfs-admon-data.db"
 
+pid = "/tmp/test.pid"
+
+LOG_FILENAME = "/tmp/sqlite2elastic.log"
+LOG_LEVEL = logging.INFO  # DEBUG WARNING
+
+
 # Main function
 def main():
     """
@@ -69,32 +80,36 @@ def main():
     # get args
     # args = parseargs()
 
+    # Read from config file
     config = ConfigParser.RawConfigParser()
+    # Check config file
     try:
         config.read(_CFG_FILE)
     except Exception as ex:
         logging.exception("Config file " + _CFG_FILE + " not found")
         sys.exit()
-        
+
+    # Check connection to elastic server
     try:
         req = requests.get("http://" + config.get('elastic', 'address') + ":" + config.get('elastic', 'port'))
     except Exception as ex:
         logging.exception("Elastic server " + config.get('elastic', 'address') + ":" + config.get('elastic', 'port') + " not reachable")
         sys.exit()
 
-    print(req.content)
-
     req.close()
 
-    con_db = sqlite3.connect(config.get('beegfs', 'db'))
-
+    # Connect to beegfs sqlite database
     try:
-        row_meta = con_db.execute("select is_responding, workRequests, queuedRequests from metaNormal order by time desc limit 0,1")
-        row_storage = con_db.execute("select is_responding, diskRead, diskWrite, diskReadPerSec, diskWritePerSec, diskSpaceTotal, diskSpaceFree from storageNormal order by time desc limit 0,1")
+        con_db = sqlite3.connect(config.get('beegfs', 'db'))
     except Exception as ex:
         logging.exception("Database " + config.get('beegfs', 'db') + " not found")
         sys.exit()
 
+    # Select to beegfs database
+    row_meta = con_db.execute("select is_responding, workRequests, queuedRequests from metaNormal order by time desc limit 0,1")
+    row_storage = con_db.execute("select is_responding, diskRead, diskWrite, diskReadPerSec, diskWritePerSec, diskSpaceTotal, diskSpaceFree from storageNormal order by time desc limit 0,1")
+
+    # Extract data from select
     for row in row_meta:
         meta_is_responding = row[0]
         meta_workRequests = row[1]
@@ -109,8 +124,10 @@ def main():
         storage_diskSpaceTotal = row[5]
         storage_diskSpaceFree = row[6]
 
+    # Close database
     con_db.close()
 
+    # Create elastic query body
     meta_body = {
         "timestamp": datetime.now(),
         "is_responding": meta_is_responding,
@@ -129,13 +146,14 @@ def main():
         "diskSpaceFree": storage_diskSpaceFree
     }
 
+    # Connect to elastic server
     es = elasticsearch.Elasticsearch([{'host': "elastic.int.cemm.at", 'port': 9200}])
-
+    # POST metrics to elastic
     res_meta = es.index(index="beegfs-data-ms01", doc_type="metrics-meta",  body=meta_body)
-
     res_storage = es.index(index="beegfs-data-storage01", doc_type="metrics-storage", body=storage_body)
 
 
 # MAIN
 if __name__ == '__main__':
     main()
+
