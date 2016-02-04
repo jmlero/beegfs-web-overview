@@ -32,7 +32,7 @@ Notes:
 - Extract the performance metrics of the metadata and storage servers
 - Post the metrics to elastic server
 TODO list:
-- Read options from a config file
+- Logging
 - Add infinite loop
 """
 
@@ -56,16 +56,113 @@ import time
 
 
 # global variables
-_SCRIPT_VERSION = '0.3'
-
-_CFG_FILE = r'/root/sqlite2elastic.cfg'
-# _ELASTIC_SERVER_DIR = "elastic.int.cemm.at"
-# _ELASTIC_SERVER_PORT = "9200"
-
-pid = "/tmp/test.pid"
-
+_SCRIPT_VERSION = '0.4'
 LOG_FILENAME = "/tmp/sqlite2elastic.log"
-LOG_LEVEL = logging.INFO  # DEBUG WARNING
+LOG_LEVEL = logging.DEBUG  # NOTSET DEBUG INFO WARNING ERROR CRITICAL
+
+
+# Define class metrics metadata
+class MetricsMeta(object):
+    '''
+    '''
+    def __init__(self, is_responding, workRequests, queuedRequests):
+        self.is_responding = is_responding
+        self.workRequests = workRequests
+        self.queuedRequests = queuedRequests
+
+# Define class metrics storage
+class MetricsStorage(object):
+    '''
+    '''
+    def __init__(self, is_responding, diskRead, diskWrite, diskReadPerSec, diskWritePerSec, diskSpaceTotal, diskSpaceFree):
+        self.is_responding = is_responding
+        self.diskRead = diskRead
+        self.diskWrite = diskWrite
+        self.diskReadPerSec = diskReadPerSec
+        self.diskWritePerSec = diskWritePerSec
+        self.diskSpaceTotal = diskSpaceTotal
+        self.diskSpaceFree = diskSpaceFree
+
+
+# Parge arguments
+def parseargs():  # pragma: no cover
+    """Sets up command-line arguments and parser
+    Parameters:
+    Returns: parser
+    Raises:
+    """
+    parser = argparse.ArgumentParser(description='Metrics BeeGFS-Sqlite to elastic')
+    parser.add_argument("--cfgFile", help='specify the config file (./sqlite2elastic.cfg by default)')
+    parser.add_argument("-v", "--version", help="show program's version number and exit", action='version', version=_SCRIPT_VERSION)
+    return parser.parse_args()
+
+
+#
+def select_metrics_meta(con_db, metaname):
+    '''
+    :return body_meta:
+    '''
+    cursor = con_db.cursor()
+    cursor.execute("select is_responding, workRequests, queuedRequests from metaNormal where nodeID=? order by time desc limit 0,1", metaname)
+    row = cursor.fetchone()
+    metrics_meta = MetricsMeta(row[0], row[1], row[2])
+
+    if ( (metrics_meta.is_responding and metrics_meta.queuedRequests and metrics_meta.workRequests) >= 0 ):
+        # Create elastic query body
+        body_meta = {
+            "timestamp": datetime.now(),
+            "is_responding": metrics_meta.is_responding,
+            "workRequests": metrics_meta.workRequests,
+            "queuedRequests": metrics_meta.queuedRequests
+        }
+    else:
+        # Error
+        logging.error("Meta metrics negative ")
+        body_meta = {
+            "timestamp": datetime.now(),
+            "is_responding": 0,
+            "workRequests": 0,
+            "queuedRequests": 0
+        }
+    return body_meta
+
+
+#
+def select_metrics_storage(con_db, stoname):
+    '''
+    :return body_storage:
+    '''
+    cursor = con_db.cursor()
+    cursor.execute("select is_responding, diskRead, diskWrite, diskReadPerSec, diskWritePerSec, diskSpaceTotal, diskSpaceFree from storageNormal where nodeID=? order by time desc limit 0,1", stoname)
+    row = cursor.fetchone()
+    metrics_storage = MetricsStorage(row[0], row[1], row[2], row[3], row[4], row[5], row[6])
+
+    if ( (metrics_storage.is_responding and metrics_storage.diskRead and metrics_storage.diskWrite and metrics_storage.diskReadPerSec and metrics_storage.diskWritePerSec and metrics_storage.diskSpaceTotal and metrics_storage.diskSpaceFree) >= 0 ):
+        #Create elastic query body
+        body_storage = {
+            "timestamp": datetime.now(),
+            "is_responding": metrics_storage.is_responding,
+            "diskRead": metrics_storage.diskRead,
+            "diskWrite": metrics_storage.diskWrite,
+            "diskReadPerSec": metrics_storage.diskReadPerSec,
+            "diskWritePerSec": metrics_storage.diskWritePerSec,
+            "diskSpaceTotal": metrics_storage.diskSpaceTotal,
+            "diskSpaceFree": metrics_storage.diskSpaceFree
+        }
+    else:
+         # Error
+        logging.error("Storage metrics negative ")
+        body_storage = {
+            "timestamp": datetime.now(),
+            "is_responding": 0,
+            "diskRead": 0,
+            "diskWrite": 0,
+            "diskReadPerSec": 0,
+            "diskWritePerSec": 0,
+            "diskSpaceTotal": 0,
+            "diskSpaceFree": 0
+        }
+    return body_storage
 
 
 # Main function
@@ -76,80 +173,64 @@ def main():
     Raises:
         ValueError for invalid arguments
     """
-    # get args
-    # args = parseargs()
+    # Set logging
+    logging.basicConfig(level=LOG_LEVEL)
+    logger = logging.getLogger(__name__)
 
-    # Read from config file
+    # Get args
+    args = parseargs()
+    # Parse args
+    if args.cfgFile is True:
+        cfgFile = r"{}".format(args.cfgFile)
+    else:
+        cfgFile = r'sqlite2elastic.cfg'
+
+    # Read config file
     config = ConfigParser.RawConfigParser()
     # Check config file
     try:
-        config.read(_CFG_FILE)
+        config.read(cfgFile)
     except Exception as ex:
-        logging.exception("Config file " + _CFG_FILE + " not found")
+        logger.exception("Config file " + cfgFile + " not found")
         sys.exit()
 
-    # Check connection to elastic server
+    logger.info("Reading config file " + cfgFile)
+
+    # Connect to elastic server
     try:
         req = requests.get("http://" + config.get('elastic', 'address') + ":" + config.get('elastic', 'port'))
+        es = elasticsearch.Elasticsearch([{'host':  config.get('elastic', 'address'), 'port':  config.get('elastic', 'port')}])
     except Exception as ex:
-        logging.exception("Elastic server " + config.get('elastic', 'address') + ":" + config.get('elastic', 'port') + " not reachable")
+        logger.exception("Elastic server " + config.get('elastic', 'address') + ":" + config.get('elastic', 'port') + " [ERROR]")
         sys.exit()
 
+    logger.debug(req)
     req.close()
+    logger.info("Connection to elastic server: " + config.get('elastic', 'address') + ":" + config.get('elastic', 'port') + " [OK]")
 
     # Connect to beegfs sqlite database
     try:
         con_db = sqlite3.connect(config.get('beegfs', 'db'))
     except Exception as ex:
-        logging.exception("Database " + config.get('beegfs', 'db') + " not found")
+        logger.exception("Database " + config.get('beegfs', 'db') + " not found")
         sys.exit()
 
+    logger.info("Connection to beegfs admon sqlite: " + config.get('beegfs', 'db') + " [OK]")
+
     # Select to beegfs database
-    row_meta = con_db.execute("select is_responding, workRequests, queuedRequests from metaNormal order by time desc limit 0,1")
-    row_storage = con_db.execute("select is_responding, diskRead, diskWrite, diskReadPerSec, diskWritePerSec, diskSpaceTotal, diskSpaceFree from storageNormal order by time desc limit 0,1")
-
-    # Extract data from select
-    for row in row_meta:
-        meta_is_responding = row[0]
-        meta_workRequests = row[1]
-        meta_queuedRequests = row[2]
-
-    for row in row_storage:
-        storage_is_responding = row[0]
-        storage_diskRead = row[1]
-        storage_diskWrite = row[2]
-        storage_diskReadPerSec = row[3]
-        storage_diskWritePerSec = row[4]
-        storage_diskSpaceTotal = row[5]
-        storage_diskSpaceFree = row[6]
-
-    # Close database
-    con_db.close()
-
-    # Create elastic query body
-    meta_body = {
-        "timestamp": datetime.now(),
-        "is_responding": meta_is_responding,
-        "workRequests": meta_workRequests,
-        "queuedRequests": meta_queuedRequests
-    }
-
-    storage_body = {
-        "timestamp": datetime.now(),
-        "is_responding": storage_is_responding,
-        "diskRead": storage_diskRead,
-        "diskWrite": storage_diskWrite,
-        "diskReadPerSec": storage_diskReadPerSec,
-        "diskWritePerSec": storage_diskWritePerSec,
-        "diskSpaceTotal": storage_diskSpaceTotal,
-        "diskSpaceFree": storage_diskSpaceFree
-    }
-
-    # Connect to elastic server
-    es = elasticsearch.Elasticsearch([{'host':  config.get('elastic', 'address'), 'port':  config.get('elastic', 'port')}])
+    metaname = (config.get('beegfs', 'metadata'),)
+    body_meta = select_metrics_meta(con_db, metaname)
     # POST metrics to elastic
-    res_meta = es.index(index="beegfs-data-" + config.get('beegfs', 'metadata'), doc_type="metrics-meta",  body=meta_body)
-    res_storage = es.index(index="beegfs-data-" + config.get('beegfs', 'storage'), doc_type="metrics-storage", body=storage_body)
+    res_meta = es.index(index="beegfs-data-" + config.get('beegfs', 'metadata'), doc_type="metrics-meta",  body=body_meta)
+
+    # Select to beegfs database
+    stoname = (config.get('beegfs', 'storage'),)
+    body_storage = select_metrics_storage(config, stoname)
+    # POST metrics to elastic
+    res_storage = es.index(index="beegfs-data-" + config.get('beegfs', 'storage'), doc_type="metrics-storage", body=body_storage)
+
+     # Close database
+    con_db.close()
 
 
 # MAIN
