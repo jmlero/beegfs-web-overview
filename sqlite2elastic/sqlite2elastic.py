@@ -61,7 +61,6 @@ _SCRIPT_VERSION = '0.3'
 _CFG_FILE = r'/root/sqlite2elastic.cfg'
 # _ELASTIC_SERVER_DIR = "elastic.int.cemm.at"
 # _ELASTIC_SERVER_PORT = "9200"
-_BEEGFS_DB = "/mnt/fhgfsMgmt/admon/fhgfs-admon-data.db"
 
 pid = "/tmp/test.pid"
 
@@ -147,10 +146,10 @@ def main():
     }
 
     # Connect to elastic server
-    es = elasticsearch.Elasticsearch([{'host': "elastic.int.cemm.at", 'port': 9200}])
+    es = elasticsearch.Elasticsearch([{'host':  config.get('elastic', 'address'), 'port':  config.get('elastic', 'port')}])
     # POST metrics to elastic
-    res_meta = es.index(index="beegfs-data-ms01", doc_type="metrics-meta",  body=meta_body)
-    res_storage = es.index(index="beegfs-data-storage01", doc_type="metrics-storage", body=storage_body)
+    res_meta = es.index(index="beegfs-data-" + config.get('beegfs', 'metadata'), doc_type="metrics-meta",  body=meta_body)
+    res_storage = es.index(index="beegfs-data-" + config.get('beegfs', 'storage'), doc_type="metrics-storage", body=storage_body)
 
 
 # MAIN
