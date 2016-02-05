@@ -56,7 +56,7 @@ import time
 
 
 # global variables
-_SCRIPT_VERSION = '0.5'
+_SCRIPT_VERSION = '0.6'
 LOG_FILENAME = "/tmp/sqlite2elastic.log"
 LOG_LEVEL = logging.DEBUG  # NOTSET DEBUG INFO WARNING ERROR CRITICAL
 
