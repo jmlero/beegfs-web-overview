@@ -103,7 +103,7 @@ def select_metrics_meta(con_db, metaname):
     :return body_meta:
     '''
     cursor = con_db.cursor()
-    cursor.execute("select is_responding, workRequests, queuedRequests from metaNormal where nodeID=? order by time desc limit 0,1", metaname)
+    cursor.execute("select is_responding, workRequests, queuedRequests from metaNormal where nodeID=? order by time desc limit 0,1", (metaname,))
     row = cursor.fetchone()
     metrics_meta = MetricsMeta(row[0], row[1], row[2])
 
@@ -133,7 +133,7 @@ def select_metrics_storage(con_db, stoname):
     :return body_storage:
     '''
     cursor = con_db.cursor()
-    cursor.execute("select is_responding, diskRead, diskWrite, diskReadPerSec, diskWritePerSec, diskSpaceTotal, diskSpaceFree from storageNormal where nodeID=? order by time desc limit 0,1", stoname)
+    cursor.execute("select is_responding, diskRead, diskWrite, diskReadPerSec, diskWritePerSec, diskSpaceTotal, diskSpaceFree from storageNormal where nodeID=? order by time desc limit 0,1", (stoname,))
     row = cursor.fetchone()
     metrics_storage = MetricsStorage(row[0], row[1], row[2], row[3], row[4], row[5], row[6])
 
@@ -186,7 +186,7 @@ def main():
         cfgFile = r'sqlite2elastic.ini'
 
     # Read config file
-    config = ConfigParser.RawConfigParser()
+    config = ConfigParser.RawConfigParser(allow_no_value=True)
     # Check config file
     try:
         config.read(cfgFile)
@@ -218,27 +218,22 @@ def main():
     logger.info("Connection to beegfs admon sqlite: " + config.get('general', 'database') + " [OK]")
 
     # Select to beegfs database
-    metaname = (config.get('beegfs', 'metadata'),)
+    list_server = config.options('metadata')
+    num_server = len(list_server)
+    for cont in range(0, num_server):
+        logger.info("-")
+        print(list_server[cont])
+        body_metrics = select_metrics_meta(con_db, list_server[cont])
+        # POST metrics to elastic
+        res_meta = es.index(index="beegfs-data-" + list_server[cont], doc_type="metrics-meta",  body=body_metrics)
 
-    metaname_array = config.options('metadata')
-    print(metaname_array)
-
-    # number of metadata servers and storage servers
-    nummetadataservers
-    numstorageservers
-
-    execute select_metrics_meta() and select_metrics_storage() for all of them in a loop
-
-
-    body_meta = select_metrics_meta(con_db, metaname)
-    # POST metrics to elastic
-    res_meta = es.index(index="beegfs-data-" + config.get('beegfs', 'metadata'), doc_type="metrics-meta",  body=body_meta)
-
-    # Select to beegfs database
-    stoname = (config.get('beegfs', 'storage'),)
-    body_storage = select_metrics_storage(config, stoname)
-    # POST metrics to elastic
-    res_storage = es.index(index="beegfs-data-" + config.get('beegfs', 'storage'), doc_type="metrics-storage", body=body_storage)
+    list_server = config.options('storage')
+    num_server = len(list_server)
+    for cont in range(0, num_server):
+        logger.info("-")
+        body_metrics = select_metrics_storage(con_db, list_server[cont])
+        # POST metrics to elastic
+        res_storage = es.index(index="beegfs-data-" + list_server[cont], doc_type="metrics-storage",  body=body_metrics)
 
      # Close database
     con_db.close()
