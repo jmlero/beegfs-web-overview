@@ -56,7 +56,7 @@ import time
 
 
 # global variables
-_SCRIPT_VERSION = '0.4'
+_SCRIPT_VERSION = '0.5'
 LOG_FILENAME = "/tmp/sqlite2elastic.log"
 LOG_LEVEL = logging.DEBUG  # NOTSET DEBUG INFO WARNING ERROR CRITICAL
 
@@ -92,7 +92,7 @@ def parseargs():  # pragma: no cover
     Raises:
     """
     parser = argparse.ArgumentParser(description='Metrics BeeGFS-Sqlite to elastic')
-    parser.add_argument("--cfgFile", help='specify the config file (./sqlite2elastic.cfg by default)')
+    parser.add_argument("--cfgFile", help='specify the config file (./sqlite2elastic.ini by default)')
     parser.add_argument("-v", "--version", help="show program's version number and exit", action='version', version=_SCRIPT_VERSION)
     return parser.parse_args()
 
@@ -183,7 +183,7 @@ def main():
     if args.cfgFile is True:
         cfgFile = r"{}".format(args.cfgFile)
     else:
-        cfgFile = r'sqlite2elastic.cfg'
+        cfgFile = r'sqlite2elastic.ini'
 
     # Read config file
     config = ConfigParser.RawConfigParser()
@@ -210,15 +210,26 @@ def main():
 
     # Connect to beegfs sqlite database
     try:
-        con_db = sqlite3.connect(config.get('beegfs', 'db'))
+        con_db = sqlite3.connect(config.get('general', 'database'))
     except Exception as ex:
-        logger.exception("Database " + config.get('beegfs', 'db') + " not found")
+        logger.exception("Database " + config.get('general', 'database') + " not found")
         sys.exit()
 
-    logger.info("Connection to beegfs admon sqlite: " + config.get('beegfs', 'db') + " [OK]")
+    logger.info("Connection to beegfs admon sqlite: " + config.get('general', 'database') + " [OK]")
 
     # Select to beegfs database
     metaname = (config.get('beegfs', 'metadata'),)
+
+    metaname_array = config.options('metadata')
+    print(metaname_array)
+
+    # number of metadata servers and storage servers
+    nummetadataservers
+    numstorageservers
+
+    execute select_metrics_meta() and select_metrics_storage() for all of them in a loop
+
+
     body_meta = select_metrics_meta(con_db, metaname)
     # POST metrics to elastic
     res_meta = es.index(index="beegfs-data-" + config.get('beegfs', 'metadata'), doc_type="metrics-meta",  body=body_meta)
