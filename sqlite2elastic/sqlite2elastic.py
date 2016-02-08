@@ -57,7 +57,6 @@ import time
 
 # global variables
 _SCRIPT_VERSION = '0.6'
-LOG_FILENAME = "/tmp/sqlite2elastic.log"
 LOG_LEVEL = logging.DEBUG  # NOTSET DEBUG INFO WARNING ERROR CRITICAL
 
 
@@ -173,10 +172,7 @@ def main():
     Raises:
         ValueError for invalid arguments
     """
-    # Set logging
-    logging.basicConfig(level=LOG_LEVEL)
     logger = logging.getLogger(__name__)
-
     # Get args
     args = parseargs()
     # Parse args
@@ -191,10 +187,13 @@ def main():
     try:
         config.read(cfgFile)
     except Exception as ex:
-        logger.exception("Config file " + cfgFile + " not found")
+        print("Config file " + cfgFile + " not found or not valid")
         sys.exit()
 
-    logger.info("Reading config file " + cfgFile)
+    # Set logging
+    log_filename = "/var/log/sqlite2elastic-" + config.get('general', 'name') + ".log"
+    print(log_filename)
+    logging.basicConfig(level=LOG_LEVEL, filename=log_filename, format='%(asctime)s - %(levelname)s - %(message)s')
 
     # Connect to elastic server
     try:
@@ -217,23 +216,24 @@ def main():
 
     logger.info("Connection to beegfs admon sqlite: " + config.get('general', 'database') + " [OK]")
 
-    # Select to beegfs database
+    # Select to beegfs database metaserver
     list_server = config.options('metadata')
     num_server = len(list_server)
     for cont in range(0, num_server):
-        logger.info("-")
+        logger.info("Obtaining metrics " + list_server[cont])
         print(list_server[cont])
         body_metrics = select_metrics_meta(con_db, list_server[cont])
         # POST metrics to elastic
-        res_meta = es.index(index="beegfs-data-" + list_server[cont], doc_type="metrics-meta",  body=body_metrics)
+        res_meta = es.index(index="beegfs-" + config.get('general', 'name') + "-" + list_server[cont], doc_type="metrics-meta",  body=body_metrics)
 
+    # Select to beegfs database storageserver
     list_server = config.options('storage')
     num_server = len(list_server)
     for cont in range(0, num_server):
-        logger.info("-")
+        logger.info("Obtaining metrics " + list_server[cont])
         body_metrics = select_metrics_storage(con_db, list_server[cont])
         # POST metrics to elastic
-        res_storage = es.index(index="beegfs-data-" + list_server[cont], doc_type="metrics-storage",  body=body_metrics)
+        res_storage = es.index(index="beegfs-" + config.get('general', 'name') + "-" + list_server[cont], doc_type="metrics-storage",  body=body_metrics)
 
      # Close database
     con_db.close()
