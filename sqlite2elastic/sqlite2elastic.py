@@ -32,8 +32,8 @@ Notes:
 - Extract the performance metrics of the metadata and storage servers
 - Post the metrics to elastic server
 TODO list:
-- Logging
-- Add infinite loop
+- Improve logging
+- Evaluate if beegfs parameters (servers) are correct
 """
 
 # imports
@@ -46,13 +46,9 @@ import ConfigParser
 import logging
 import argparse
 from time import sleep
-import logging
 import logging.handlers
 import time
-# import os
-# import json
-# import errno
-# import string
+
 
 
 # global variables
@@ -81,19 +77,6 @@ class MetricsStorage(object):
         self.diskWritePerSec = diskWritePerSec
         self.diskSpaceTotal = diskSpaceTotal
         self.diskSpaceFree = diskSpaceFree
-
-
-# Parge arguments
-def parseargs():  # pragma: no cover
-    """Sets up command-line arguments and parser
-    Parameters:
-    Returns: parser
-    Raises:
-    """
-    parser = argparse.ArgumentParser(description='Metrics BeeGFS-Sqlite to elastic')
-    parser.add_argument("--cfgFile", help='specify the config file (./sqlite2elastic.ini by default)')
-    parser.add_argument("-v", "--version", help="show program's version number and exit", action='version', version=_SCRIPT_VERSION)
-    return parser.parse_args()
 
 
 #
@@ -172,30 +155,52 @@ def main():
     Raises:
         ValueError for invalid arguments
     """
+    # Configure logger
+    # General purpose logger
     logger = logging.getLogger(__name__)
+    # elastic logger
+    # logging.getLogger('elasticsearch.trace')
+    # Either write to a file or to stdout
+    # estracer.addHandler(logging.FileHandler('/tmp/es_tracer.log'))
+    # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+
+    # Use handler in this way
+    # es_tracer = logging.getLogger('elasticsearch.trace')
+    # es_tracer.setLevel(logging.INFO)
+    # es_tracer.addHandler(logging.FileHandler('/tmp/es_trace.log'))
+
     # Get args
     args = parseargs()
     # Parse args
-    if args.cfgFile is True:
-        cfgFile = r"{}".format(args.cfgFile)
+    if args.cfgfile is True:
+        cfgfile = r"{}".format(args.cfgfile)
     else:
-        cfgFile = r'sqlite2elastic.ini'
+        cfgfile = r'sqlite2elastic.ini'
 
     # Read config file
     config = ConfigParser.RawConfigParser(allow_no_value=True)
     # Check config file
     try:
-        config.read(cfgFile)
+        config.read(cfgfile)
     except Exception as ex:
-        print("Config file " + cfgFile + " not found or not valid")
+        print("Config file " + cfgfile + " not found or not valid")
         sys.exit()
 
     # Set logging
-    log_filename = "/var/log/sqlite2elastic-" + config.get('general', 'name') + ".log"
-    print(log_filename)
-    logging.basicConfig(level=LOG_LEVEL, filename=log_filename, format='%(asctime)s - %(levelname)s - %(message)s')
+    if args.logfile is True:
+        log_filename = args.logfile
+    else:
+        log_filename = "/var/log/sqlite2elastic-" + config.get('general', 'name') + ".log"
 
-    # Connect to elastic server
+    if args.debuglevel is True:
+        debug_level = args.debuglevel
+    else:
+        debug_level = LOG_LEVEL
+
+    # Configure logging
+    logging.basicConfig(level=debug_level, filename=log_filename, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    # Test connection to elastic server
     try:
         req = requests.get("http://" + config.get('elastic', 'address') + ":" + config.get('elastic', 'port'))
         es = elasticsearch.Elasticsearch([{'host':  config.get('elastic', 'address'), 'port':  config.get('elastic', 'port')}])
@@ -207,7 +212,7 @@ def main():
     req.close()
     logger.info("Connection to elastic server: " + config.get('elastic', 'address') + ":" + config.get('elastic', 'port') + " [OK]")
 
-    # Connect to beegfs sqlite database
+    # Test connection to beegfs sqlite database
     try:
         con_db = sqlite3.connect(config.get('general', 'database'))
     except Exception as ex:
@@ -216,27 +221,67 @@ def main():
 
     logger.info("Connection to beegfs admon sqlite: " + config.get('general', 'database') + " [OK]")
 
-    # Select to beegfs database metaserver
-    list_server = config.options('metadata')
-    num_server = len(list_server)
-    for cont in range(0, num_server):
-        logger.info("Obtaining metrics " + list_server[cont])
-        print(list_server[cont])
-        body_metrics = select_metrics_meta(con_db, list_server[cont])
-        # POST metrics to elastic
-        res_meta = es.index(index="beegfs-" + config.get('general', 'name') + "-" + list_server[cont], doc_type="metrics-meta",  body=body_metrics)
+    # Extract data and export to elastic
+    num_failed = 0
+    num_loops = 0
+    while True and (num_failed < 5):
+        failed_state = False
+        # Select to beegfs database metaserver
+        list_server = config.options('metadata')
+        num_server = len(list_server)
+        for cont in range(0, num_server):
+            logger.info("Obtaining metrics " + list_server[cont])
+            body_metrics = select_metrics_meta(con_db, list_server[cont])
+            # POST metrics to elastic
+            try:
+                res_meta = es.index(index="beegfs-" + config.get('general', 'name') + "-" + list_server[cont], doc_type="metrics-meta",  body=body_metrics)
+            except Exception as ex:
+                logger.exception("Exporting to elastic failed")
+                failed_state = True
 
-    # Select to beegfs database storageserver
-    list_server = config.options('storage')
-    num_server = len(list_server)
-    for cont in range(0, num_server):
-        logger.info("Obtaining metrics " + list_server[cont])
-        body_metrics = select_metrics_storage(con_db, list_server[cont])
-        # POST metrics to elastic
-        res_storage = es.index(index="beegfs-" + config.get('general', 'name') + "-" + list_server[cont], doc_type="metrics-storage",  body=body_metrics)
+        # Select to beegfs database storageserver
+        list_server = config.options('storage')
+        num_server = len(list_server)
+        for cont in range(0, num_server):
+            logger.info("Obtaining metrics " + list_server[cont])
+            body_metrics = select_metrics_storage(con_db, list_server[cont])
+            # POST metrics to elastic
+            try:
+                res_storage = es.index(index="beegfs-" + config.get('general', 'name') + "-" + list_server[cont], doc_type="metrics-storage",  body=body_metrics)
+            except Exception as ex:
+                logger.exception("Exporting to elastic failed")
+                failed_state = True
 
-     # Close database
+        # Check if consecutive failed connections
+        if failed_state is True:
+            num_failed += 1
+
+        if (num_loops > 10):
+            num_failed = 0
+            num_loops = 0
+
+        num_loops += 1
+        logger.info("Sleeping " + str(float(config.get('general', 'time'))) + " seconds")
+        sleep(float(config.get('general', 'time')))
+
+
+    # Close database
     con_db.close()
+
+
+# Parge arguments
+def parseargs():  # pragma: no cover
+    """Sets up command-line arguments and parser
+    Parameters:
+    Returns: parser
+    Raises:
+    """
+    parser = argparse.ArgumentParser(description='Metrics BeeGFS-Sqlite to elastic')
+    parser.add_argument("-f", "--cfgfile", default="sqlite2elastic.ini", help='Specify the config file (./sqlite2elastic.ini by default)')
+    parser.add_argument("-l", "--logfile", help='Specify the log file (/var/log/sqlite2elastic-fsname.log by default)')
+    parser.add_argument("-d", "--debuglevel", choices=['logging.DEBUG', 'logging.INFO', 'logging.WARNING', 'logging.ERROR', 'logging.CRITICAL'], help='Set the logging level')
+    parser.add_argument("-v", "--version", help="show program's version number and exit", action='version', version=_SCRIPT_VERSION)
+    return parser.parse_args()
 
 
 # MAIN
