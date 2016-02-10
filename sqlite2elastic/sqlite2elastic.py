@@ -52,7 +52,7 @@ import time
 
 
 # global variables
-_SCRIPT_VERSION = '0.6'
+_SCRIPT_VERSION = '0.1'
 LOG_LEVEL = logging.DEBUG  # NOTSET DEBUG INFO WARNING ERROR CRITICAL
 
 
