@@ -33,6 +33,7 @@ Notes:
 - Post the metrics to elastic server
 TODO list:
 - Improve logging
+	- Add TimedRotatingFileHandler
 - Evaluate if beegfs parameters (servers) are correct
 """
 
