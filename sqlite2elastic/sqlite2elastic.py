@@ -173,8 +173,8 @@ def main():
     # Get args
     args = parseargs()
     # Parse args
-    if args.cfgfile is True:
-        cfgfile = r"{}".format(args.cfgfile)
+    if args.cfgfile is not None:
+        cfgfile = r'{0}'.format(args.cfgfile)
     else:
         cfgfile = r'sqlite2elastic.ini'
 
@@ -278,7 +278,7 @@ def parseargs():  # pragma: no cover
     Raises:
     """
     parser = argparse.ArgumentParser(description='Metrics BeeGFS-Sqlite to elastic')
-    parser.add_argument("-f", "--cfgfile", default="sqlite2elastic.ini", help='Specify the config file (./sqlite2elastic.ini by default)')
+    parser.add_argument("-f", "--cfgfile", help='Specify the config file (./sqlite2elastic.ini by default)')
     parser.add_argument("-l", "--logfile", help='Specify the log file (/var/log/sqlite2elastic-fsname.log by default)')
     parser.add_argument("-d", "--debuglevel", choices=['logging.DEBUG', 'logging.INFO', 'logging.WARNING', 'logging.ERROR', 'logging.CRITICAL'], help='Set the logging level')
     parser.add_argument("-v", "--version", help="show program's version number and exit", action='version', version=_SCRIPT_VERSION)
