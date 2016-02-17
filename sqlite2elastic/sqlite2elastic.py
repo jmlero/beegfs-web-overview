@@ -240,7 +240,6 @@ def main():
                 logger.exception("Exporting to elastic failed")
                 failed_state = True
 
-        # Select to beegfs database storageserver
         list_server = config.options('storage')
         num_server = len(list_server)
         for cont in range(0, num_server):
@@ -252,7 +251,7 @@ def main():
             except Exception as ex:
                 logger.exception("Exporting to elastic failed")
                 failed_state = True
-
+       
         # Check if consecutive failed connections
         if failed_state is True:
             num_failed += 1
