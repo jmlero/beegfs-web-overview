@@ -285,7 +285,7 @@ def main():
     con_db.close()
 
 
-# Parge arguments
+# Parse arguments
 def parseargs():  # pragma: no cover
     """Sets up command-line arguments and parser
     Parameters:
